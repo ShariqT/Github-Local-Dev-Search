@@ -12,12 +12,14 @@ class AppContainer() : Application<AppConfig>(){
     override fun initialize(bootstrap: Bootstrap<AppConfig>) {
         super.initialize(bootstrap)
         bootstrap.addBundle(ViewBundle<AppConfig>())
-        bootstrap.addBundle(AssetsBundle())
+        bootstrap.addBundle(AssetsBundle("/assets/", "/assets/"))
 
     }
     override fun run(configuration: AppConfig, environment: Environment) {
         val g = GithubService(configuration.client_id, configuration.client_secret)
         environment.jersey().register(AuthResources(g))
         environment.jersey().register(Site(g))
+
+
     }
 }

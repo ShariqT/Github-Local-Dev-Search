@@ -4,12 +4,15 @@ import com.fasterxml.jackson.annotation.PropertyAccessor
 import com.fasterxml.jackson.databind.ObjectMapper
 import khttp.get
 import khttp.post
+import khttp.responses.Response
 import name.shariqtorres.models.GithubUser
 import name.shariqtorres.models.GithubUserResponse
 import name.shariqtorres.models.GithubRepo
 import org.json.JSONArray
 import java.net.URLEncoder
-import java.util.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Callable
 
 class GithubService(val client_id:String, val client_secret:String, val baseURL:String = "https://api.github.com"){
 
@@ -17,23 +20,33 @@ class GithubService(val client_id:String, val client_secret:String, val baseURL:
         return "read:user"
     }
 
+
+    fun asyncTask(runnable:Response): Response{
+        val myService:ExecutorService = Executors.newFixedThreadPool(2)
+        val result = myService.submit(Callable<Response> {
+            runnable;
+        })
+        return result.get()
+
+    }
     fun getSignInURL(): String{
         val params:Map<String, String> = mapOf("client_id" to this.client_id, "scope" to this.getScopes())
-        val req = get("https://github.com/login/oauth/authorize", params = params )
+        var req:Response = this.asyncTask( get("https://github.com/login/oauth/authorize", params=params ) )
+
         return req.url
     }
 
     fun getUserInfo(token:String ): GithubUser?{
         var params: Map<String, String> = mapOf("access_token" to token)
         var headers: Map<String, String> = mapOf("Accepts" to "application/json")
-        val req = get(this.baseURL + "/user", headers=headers, params=params)
+        val req = this.asyncTask(get(this.baseURL + "/user", headers=headers, params=params))
         if(req.statusCode != 200){
             return null
         }else{
             val user = GithubUser(req.jsonObject["name"].toString(),
                     req.jsonObject["login"].toString(),
                     req.jsonObject["avatar_url"].toString(),
-                    "")
+                    req.jsonObject["location"].toString())
 
             return user;
         }
@@ -43,7 +56,7 @@ class GithubService(val client_id:String, val client_secret:String, val baseURL:
         var objmapper = ObjectMapper();
         objmapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
         var urlString = this.baseURL + "/search/users?location=" + URLEncoder.encode(location, "utf-8") + "&access_token=" + token +"&q=language:" + URLEncoder.encode(projectLang, "utf-8");
-        val req = get(urlString);
+        val req = this.asyncTask(get(urlString));
         if(req.statusCode != 200){
             return null
             // this means that we can't complete the next query to get the repos...
@@ -54,7 +67,7 @@ class GithubService(val client_id:String, val client_secret:String, val baseURL:
                 val start = this.getPage(linkHeader[0])
                 val end = this.getPage(linkHeader[1])
                 val newPage = (start until end).shuffled().last()
-                val res2 = get(urlString + "&page=" + newPage)
+                val res2 = this.asyncTask(get(urlString + "&page=" + newPage))
                 if(res2.statusCode != 200){
                     return null
                     // this means we can't get the next query to get the repos...
@@ -73,7 +86,7 @@ class GithubService(val client_id:String, val client_secret:String, val baseURL:
     fun getUserRepos(username:String, language:String, access_token:String): MutableList<GithubRepo>{
         var urlString = this.baseURL + "/search/repositories?access_token=" + access_token
         urlString = urlString + "&q=language:" + URLEncoder.encode(language, "utf-8") + "+user:" + URLEncoder.encode(username, "utf-8");
-        val res = get(urlString);
+        val res = this.asyncTask(get(urlString));
         println(urlString)
         var data: MutableList<GithubRepo> = mutableListOf();
         val items:JSONArray = res.jsonObject.getJSONArray("items")
@@ -122,11 +135,11 @@ class GithubService(val client_id:String, val client_secret:String, val baseURL:
         data.put("client_secret", this.client_secret)
         var headers:Map<String, String> = mapOf("Accept" to "application/json")
 
-        var res = post("https://github.com/login/oauth/access_token", headers=headers, data = data)
+        var res = this.asyncTask(post("https://github.com/login/oauth/access_token", headers=headers, data = data))
         if (res.statusCode == 200){
             return res.jsonObject["access_token"].toString()
         }else {
-            return null
+            return null;
         }
     }
 }
